@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NER Results</title>
+</head>
+<body>
+    <h1>Named Entity Recognition Results</h1>
+    {% if entities %}
+        <table border="1">
+            <tr>
+                <th>Token</th>
+                <th>Entity Type</th>
+                <th>POS Tag</th>
+            </tr>
+            {% for token, entity_type, pos in entities %}
+            <tr>
+                <td>{{ token }}</td>
+                <td>{{ entity_type }}</td>
+                <td>{{ pos }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+    {% else %}
+        <p>No entities found.</p>
+    {% endif %}
+    <a href="/">Go Back</a>
+</body>
+</html>

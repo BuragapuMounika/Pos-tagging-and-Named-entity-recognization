@@ -1,0 +1,743 @@
+from flask import Flask, render_template, request
+from transformers import pipeline
+import nltk
+from nltk.tokenize import word_tokenize
+from nltk import pos_tag
+
+# Initialize Flask app
+app = Flask(__name__)
+
+# Explicitly specify the NER model and use the aggregation strategy
+ner_pipeline = pipeline("ner", model="dbmdz/bert-large-cased-finetuned-conll03-english", aggregation_strategy="simple")
+
+# Function to perform POS tagging and NER
+def pos_ner(sentence):
+    # Perform NER using Hugging Face pipeline
+    ner_results = ner_pipeline(sentence)
+
+    # Format the NER results to show entity and its type
+    ner_result_formatted = []
+    for result in ner_results:
+        word = result['word']
+        entity_type = result.get('entity_group', 'N/A')  # Handle 'entity_group' for aggregated results
+        
+        # Clean up the entity type (e.g., turn "ORG" into "Organization (ORG)")
+        if entity_type == "ORG":
+            entity_type = "Organization (ORG)"
+        elif entity_type == "PRODUCT":
+            entity_type = "Product (PRODUCT)"
+        elif entity_type == "DATE":
+            entity_type = "Date (DATE)"
+        # Add more entity types as needed
+
+        ner_result_formatted.append((word, entity_type))
+
+    # Perform POS tagging using NLTK
+    tokens = word_tokenize(sentence)
+    pos_results = pos_tag(tokens)  # [('Apple', 'NNP'), ('Inc.', 'NNP'), ...]
+
+    return pos_results, ner_result_formatted
+
+# Flask route to handle the home page and form submission
+@app.route("/", methods=["GET", "POST"])
+def index():
+    pos_tags = None
+    ner_result = None
+    sentence = None
+    if request.method == "POST":
+        sentence = request.form["sentence"]
+        # Get POS tags and NER from the sentence
+        pos_tags, ner_result = pos_ner(sentence)
+
+    # Render the HTML template with the results
+    return render_template("index.html", sentence=sentence, pos_tags=pos_tags, ner_result=ner_result)
+
+# Run the app
+if __name__ == "__main__":
+    app.run(debug=True)
+
+
+
+
+
+
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>POS Tagging and NER</title>
+</head>
+<body>
+    <h1>Upload a Document for POS Tagging and Named Entity Recognition</h1>
+    
+    <!-- The form submits the selected document type and file -->
+    <form action="/" method="POST" enctype="multipart/form-data">
+        <label for="document_type">Choose a document type:</label>
+        <select name="document_type" id="document_type">
+            <option value="article">Article</option>
+            <option value="medical_record">Medical Record</option>
+            <option value="legal_document">Legal Document</option>
+        </select><br><br>
+        
+        <label for="file">Upload file:</label>
+        <input type="file" name="file" id="file"><br><br>
+        
+        <!-- Submit button triggers form submission -->
+        <button type="submit">Analyze</button>
+    </form>
+
+    <!-- Error message if something goes wrong -->
+    {% if error_message %}
+        <p style="color: red;">{{ error_message }}</p>
+    {% endif %}
+
+    <!-- Display results if available -->
+    {% if sentence %}
+        <h2>Uploaded Text:</h2>
+        <p>{{ sentence }}</p>
+        
+        <h2>POS Tags:</h2>
+        <ul>
+            {% for word, tag in pos_tags %}
+                <li>{{ word }}: {{ tag }}</li>
+            {% endfor %}
+        </ul>
+
+        <h2>Named Entities:</h2>
+        <ul>
+            {% for word, entity in ner_result %}
+                <li>{{ word }}: {{ entity }}</li>
+            {% endfor %}
+        </ul>
+    {% endif %}
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>POS & NER Analyzer</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            margin: 0 auto;
+            padding: 20px;
+            max-width: 800px;
+            background-color: #fff;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .input-section {
+            margin-bottom: 20px;
+        }
+        .input-section label {
+            display: block;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+        .input-section input[type="text"], 
+        .input-section input[type="file"] {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        .input-section button {
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .input-section button:hover {
+            background-color: #0056b3;
+        }
+        .results {
+            margin-top: 20px;
+        }
+        .results h3 {
+            color: #007bff;
+        }
+        .results pre {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        .choose-section {
+            display: none;
+            margin-top: 20px;
+        }
+        .choose-section.active {
+            display: block;
+        }
+        .option-buttons label {
+            display: block;
+            margin-bottom: 20px;
+        }
+        .option-buttons img {
+            width: 50px;
+            height: 50px;
+            vertical-align: middle;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>POS Tagging & Named Entity Recognition</h1>
+
+        <form method="POST" enctype="multipart/form-data">
+            <div class="input-section">
+                <label for="text_input">Type Your Own Text</label>
+                <input type="text" name="text_input" placeholder="Enter text to analyze...">
+                <button type="submit" name="option" value="own_text">Analyze Text</button>
+            </div>
+
+            <div class="input-section">
+                <button type="button" id="choose-button">Choose Option</button>
+            </div>
+
+            <div class="choose-section" id="choose-section">
+                <div class="option-buttons">
+                    <label>
+                        <img src="{{ url_for('static', filename='text_icon.png') }}" alt="Text">
+                        Upload an Image
+                        <input type="file" name="file" class="file-upload">
+                        <button type="submit" name="option" value="upload_image">Analyze Image</button>
+                    </label>
+
+
+                    <form action="{{ url_for('upload_file') }}" method="post" enctype="multipart/form-data">
+                        <input type="file" name="file" required>
+                        <input type="submit" value="Upload">
+                    </form>
+                    
+
+                    <label>
+                        <img src="{{ url_for('static', filename='document_icon.png') }}" alt="Document">
+                        Upload a Document
+                        <input type="file" name="file" class="file-upload">
+                        <button type="submit" name="option" value="upload_document">Analyze Document</button>
+                    </label>
+                </div>
+            </div>
+        </form>
+
+        {% if sentence %}
+        <div class="results">
+            <h3>Input Text:</h3>
+            <pre>{{ sentence }}</pre>
+
+            <h3>POS Tags:</h3>
+            <pre>{{ pos_tags }}</pre>
+
+            <h3>NER Results:</h3>
+            <pre>{{ ner_result }}</pre>
+        </div>
+        {% endif %}
+
+        {% if error_message %}
+        <div class="error">
+            <p style="color: red;">{{ error_message }}</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <script>
+        document.getElementById('choose-button').addEventListener('click', function() {
+            var chooseSection = document.getElementById('choose-section');
+            chooseSection.classList.toggle('active');
+        });
+    </script>
+</body>
+</html>
+
+
+
+
+
+
+
+from flask import Flask, render_template, request
+import os
+import re
+from werkzeug.utils import secure_filename
+import nltk
+from nltk import pos_tag, word_tokenize
+from nltk.chunk import ne_chunk
+from nltk.tree import Tree
+import re
+from PIL import Image
+import pytesseract
+from PIL import ImageFilter
+
+from flask import Flask, request, redirect, url_for, flash
+
+
+app = Flask(__name__)
+app.config['UPLOAD_FOLDER'] = 'uploads/'
+app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg', 'gif'}
+
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
+
+
+def extract_pos_tags(text):
+    """Extract Part-of-Speech tags from the input text."""
+    tokens = word_tokenize(text)
+    return pos_tag(tokens)
+
+def extract_named_entities(text):
+    """Extract named entities from the input text."""
+    tokens = word_tokenize(text)
+    pos_tags = pos_tag(tokens)
+    chunked = ne_chunk(pos_tags)
+    named_entities = []
+
+    # Enhanced date pattern for whole date expressions
+    date_pattern = r'\b\d{1,2}(st|nd|rd|th)?\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}\b'
+    
+    # Check for dates in the text using regex
+    date_matches = re.findall(date_pattern, text)
+    for match in date_matches:
+        named_entities.append((' '.join(match), 'DATE'))
+        
+        
+          # Custom name recognition set
+    known_names = {'Mounika', 'Alice', 'Bob'}  # Add more known names as necessary
+
+
+    # Iterate through the NLTK chunked tree to get named entities
+    for subtree in chunked:
+        if isinstance(subtree, Tree):
+            entity = " ".join([word for word, tag in subtree.leaves()])
+            entity_type = subtree.label()
+            # Avoid double-counting dates already matched by regex
+            if entity not in [e[0] for e in named_entities]:
+                named_entities.append((entity, entity_type))
+        else:
+            word, tag = subtree
+            # Ensure proper capitalization for identifying PERSON entities
+            if tag == 'NNP' and word[0].isupper():
+                # Add additional checks for common non-name words
+                if word.lower() not in ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december']:
+                    named_entities.append((word, 'PERSON'))
+
+    return named_entities
+
+def extract_text_from_image(image_path):
+    # Open the image using PIL and perform OCR
+    try:
+         # Open the image using PIL
+        image = Image.open(image_path)
+            # Convert the image to grayscale
+        image = image.convert('L')
+        
+        # Apply filters to enhance image (optional)
+        image = image.filter(ImageFilter.SHARPEN)  # Sharpening
+        image = image.filter(ImageFilter.MedianFilter(size=3))  # Noise reduction
+        
+         # You may also resize the image for better results
+        image = image.resize((image.width * 2, image.height * 2))  # Increase size
+
+        
+        # Perform OCR
+        text = pytesseract.image_to_string(image,lang ="eng")
+        print("Extracted Text:", text)  # Log the output
+        return text
+    except Exception as e:
+        print("Error during OCR processing:", e)
+        return None
+
+      
+
+
+@app.route("/", methods=["GET", "POST"])
+def index():
+    """Render the main page and handle form submissions."""
+    error_message = None
+    sentence = None
+    pos_tags = None
+    ner_result = None
+
+    if request.method == "POST":
+        option = request.form.get("option")
+
+        if option == "own_text":
+            # Analyze input text
+            sentence = request.form.get("text_input")
+            if sentence:
+                pos_tags = extract_pos_tags(sentence)
+                ner_result = extract_named_entities(sentence)
+            else:
+                error_message = "No text provided for analysis."
+
+        elif option in ["upload_image", "upload_document"]:
+            # Handle file upload
+            file = request.files.get("file")
+            if file and allowed_file(file.filename):
+                filename = secure_filename(file.filename)
+                filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                file.save(filepath)
+
+                # Extract text based on file type
+                if filename.endswith('.txt'):
+                    with open(filepath, 'r') as f:
+                        sentence = f.read()
+                elif filename.endswith('.pdf'):
+                    sentence = "PDF text extraction logic needs to be implemented."
+                elif filename.endswith(('.png', '.jpg', '.jpeg')):
+                    sentence = "OCR text extraction logic needs to be implemented."
+
+                if sentence:
+                    pos_tags = extract_pos_tags(sentence)
+                    ner_result = extract_named_entities(sentence)
+                else:
+                    error_message = "Unable to extract text from the uploaded file."
+            else:
+                error_message = "File type not allowed or no file uploaded."
+
+    return render_template("index.html", sentence=sentence, pos_tags=pos_tags, ner_result=ner_result, error_message=error_message)
+
+if __name__ == "__main__":
+    app.run(debug=True)
+
+
+
+
+
+
+    import os
+import re
+from flask import Flask, render_template, request, redirect, url_for
+from werkzeug.utils import secure_filename
+import nltk
+from nltk import pos_tag, word_tokenize
+from nltk.chunk import ne_chunk
+from nltk.tree import Tree
+from PIL import Image, ImageFilter
+import pytesseract
+
+app = Flask(__name__)
+app.config['UPLOAD_FOLDER'] = 'uploads/'
+app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg', 'txt','pdf','docx'}
+
+# Helper function to check allowed file types
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
+
+# POS tagging function
+def extract_pos_tags(text):
+    tokens = word_tokenize(text)
+    return pos_tag(tokens)
+
+# NER function
+def extract_named_entities(text):
+    tokens = word_tokenize(text)
+    pos_tags = pos_tag(tokens)
+    chunked = ne_chunk(pos_tags)
+    named_entities = []
+
+    # Regex pattern for dates
+    date_pattern = r'\b\d{1,2}(st|nd|rd|th)?\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}\b'
+    date_matches = re.findall(date_pattern, text)
+    for match in date_matches:
+        named_entities.append((' '.join(match), 'DATE'))
+
+    known_names = {'Mounika', 'Alice', 'Bob'}  # Add any specific names here
+
+    for subtree in chunked:
+        if isinstance(subtree, Tree):
+            entity = " ".join([word for word, tag in subtree.leaves()])
+            entity_type = subtree.label()
+            if entity not in [e[0] for e in named_entities]:
+                named_entities.append((entity, entity_type))
+        else:
+            word, tag = subtree
+            if tag == 'NNP' and word[0].isupper() and word not in known_names:
+                named_entities.append((word, 'PERSON'))
+
+    return named_entities
+
+# OCR function to extract text from an image
+def extract_text_from_image(image_path):
+    try:
+        image = Image.open(image_path)
+        image = image.convert('L')
+        image = image.filter(ImageFilter.SHARPEN)
+        image = image.filter(ImageFilter.MedianFilter(size=3))
+        image = image.resize((image.width * 2, image.height * 2))
+        text = pytesseract.image_to_string(image, lang="eng")
+        return text
+    except Exception as e:
+        print("Error during OCR processing:", e)
+        return None
+
+# Route for main page
+@app.route("/", methods=["GET", "POST"])
+def index():
+    error_message = None
+    sentence = None
+    pos_tags = None
+    ner_result = None
+
+    if request.method == "POST":
+         # Check if a file is submitted
+        if 'file' not in request.files:
+            return render_template('index.html', error_message="No file uploaded")
+
+        file = request.files['file']
+
+        # Check if the file has a valid name and type
+        if file.filename == '':
+            return render_template('index.html', error_message="No file selected")
+        
+        if not allowed_file(file.filename):
+            return render_template('index.html', error_message="Invalid file type. Please upload .txt, .pdf, or .docx")
+
+        # Save the file or process it as needed
+        # Example: file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+
+        return render_template('index.html', success_message="File uploaded successfully")
+
+    return render_template('index.html')
+    option = request.form.get("option")
+
+    if option == "own_text":
+            # Get text input
+            sentence = request.form.get("text_input")
+            if sentence:
+                pos_tags = extract_pos_tags(sentence)
+                ner_result = extract_named_entities(sentence)
+            else:
+                error_message = "No text provided for analysis."
+
+        elif option == "upload_image":
+            # Handle image upload
+            file = request.files.get("file")
+            if file and allowed_file(file.filename):
+                filename = secure_filename(file.filename)
+                filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                file.save(filepath)
+
+                # Extract text using OCR
+                sentence = extract_text_from_image(filepath)
+                if sentence:
+                    pos_tags = extract_pos_tags(sentence)
+                    ner_result = extract_named_entities(sentence)
+                else:
+                    error_message = "Unable to extract text from the uploaded image."
+            else:
+                error_message = "Invalid file type or no file uploaded for image."
+
+        elif option == "upload_document":
+            # Handle document upload
+            file = request.files.get("file")
+            if file and allowed_file(file.filename):
+                filename = secure_filename(file.filename)
+                filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                file.save(filepath)
+
+                # Extract text if it's a .txt file
+                if filename.endswith('.txt'):
+                    with open(filepath, 'r') as f:
+                        sentence = f.read()
+                    pos_tags = extract_pos_tags(sentence)
+                    ner_result = extract_named_entities(sentence)
+                else:
+                    error_message = "Unsupported document format. Please upload a .txt file."
+            else:
+                error_message = "Invalid file type or no file uploaded for document."
+
+    return render_template("index.html", sentence=sentence, pos_tags=pos_tags, ner_result=ner_result, error_message=error_message)
+
+if __name__ == "__main__":
+    app.run(debug=True)
+
+
+
+
+
+
+
+
+
+
+    import os
+import re
+from flask import Flask, render_template, request, redirect, url_for
+from werkzeug.utils import secure_filename
+import nltk
+from nltk import pos_tag, word_tokenize
+from nltk.chunk import ne_chunk
+from nltk.tree import Tree
+from PIL import Image, ImageFilter
+import pytesseract
+
+app = Flask(__name__)
+app.config['UPLOAD_FOLDER'] = 'uploads/'
+app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg', 'txt', 'pdf', 'docx'}
+
+# Helper function to check allowed file types
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
+
+# POS tagging function
+def extract_pos_tags(text):
+    tokens = word_tokenize(text)
+    return pos_tag(tokens)
+
+# NER function
+def extract_named_entities(text):
+    tokens = word_tokenize(text)
+    pos_tags = pos_tag(tokens)
+    chunked = ne_chunk(pos_tags)
+    named_entities = []
+
+    # Regex pattern for dates
+    date_pattern = r'\b\d{1,2}(st|nd|rd|th)?\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}\b'
+    date_matches = re.findall(date_pattern, text)
+    for match in date_matches:
+        named_entities.append((' '.join(match), 'DATE'))
+
+    known_names = {'Mounika', 'Alice', 'Bob'}  # Add any specific names here
+
+    for subtree in chunked:
+        if isinstance(subtree, Tree):
+            entity = " ".join([word for word, tag in subtree.leaves()])
+            entity_type = subtree.label()
+            if entity not in [e[0] for e in named_entities]:
+                named_entities.append((entity, entity_type))
+        else:
+            word, tag = subtree
+            if tag == 'NNP' and word[0].isupper() and word not in known_names:
+                named_entities.append((word, 'PERSON'))
+
+    return named_entities
+
+# OCR function to extract text from an image
+def extract_text_from_image(image_path):
+    try:
+        image = Image.open(image_path)
+        image = image.convert('L')
+        image = image.filter(ImageFilter.SHARPEN)
+        image = image.filter(ImageFilter.MedianFilter(size=3))
+        image = image.resize((image.width * 2, image.height * 2))
+        text = pytesseract.image_to_string(image, lang="eng")
+        return text
+    except Exception as e:
+        print("Error during OCR processing:", e)
+        return None
+
+# Route for main page
+@app.route("/", methods=["GET", "POST"])
+def index():
+    if request.method == 'POST':
+        # Check if a file is submitted
+        if 'file' not in request.files:
+            return render_template('index.html', error_message="No file uploaded")
+
+        file = request.files['file']
+         # Check if the file has a valid name and type
+        if file.filename == '':
+            return render_template('index.html', error_message="No file selected")
+        
+        if not allowed_file(file.filename):
+            return render_template('index.html', error_message="Invalid file type. Please upload .txt, .pdf, or .docx")
+        
+        # Save the file or process it as needed
+        # Example: file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+
+        return render_template('index.html', success_message="File uploaded successfully")
+
+    return render_template('index.html')
+        
+        
+        
+        
+    error_message = None
+    sentence = None
+    pos_tags = None
+    ner_result = None
+
+    if request.method == "POST":
+        option = request.form.get("option")
+
+        if option == "own_text":
+            # Get text input
+            sentence = request.form.get("text_input")
+            if sentence:
+                pos_tags = extract_pos_tags(sentence)
+                ner_result = extract_named_entities(sentence)
+            else:
+                error_message = "No text provided for analysis."
+
+        elif option == "upload_image":
+            # Handle image upload
+            file = request.files.get("file")
+            if file and allowed_file(file.filename):
+                filename = secure_filename(file.filename)
+                filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                file.save(filepath)
+
+                # Extract text using OCR
+                sentence = extract_text_from_image(filepath)
+                if sentence:
+                    pos_tags = extract_pos_tags(sentence)
+                    ner_result = extract_named_entities(sentence)
+                else:
+                    error_message = "Unable to extract text from the uploaded image."
+            else:
+                error_message = "Invalid file type or no file uploaded for image."
+
+        elif option == "upload_document":
+            # Handle document upload
+            file = request.files.get("file")
+            if file and allowed_file(file.filename):
+                filename = secure_filename(file.filename)
+                filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                file.save(filepath)
+
+                # Extract text if it's a .txt file
+                if filename.endswith('.txt'):
+                    with open(filepath, 'r') as f:
+                        sentence = f.read()
+                    pos_tags = extract_pos_tags(sentence)
+                    ner_result = extract_named_entities(sentence)
+                else:
+                    error_message = "Unsupported document format. Please upload a .txt file."
+            else:
+                error_message = "Invalid file type or no file uploaded for document."
+
+    return render_template("index.html", sentence=sentence, pos_tags=pos_tags, ner_result=ner_result, error_message=error_message)
+
+if __name__ == "__main__":
+    app.run(debug=True)

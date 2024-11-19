@@ -1,0 +1,107 @@
+from flask import Flask, render_template, request, redirect, url_for
+from transformers import pipeline
+import nltk
+from nltk.tokenize import word_tokenize
+from nltk import pos_tag
+import os
+from werkzeug.utils import secure_filename
+
+# Initialize Flask app
+app = Flask(__name__)
+
+# Set up file upload configuration
+UPLOAD_FOLDER = 'uploads'
+ALLOWED_EXTENSIONS = {'txt', 'pdf', 'docx'}
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+# NER model pipeline from Hugging Face
+ner_pipeline = pipeline("ner", model="dbmdz/bert-large-cased-finetuned-conll03-english", aggregation_strategy="simple")
+
+# Function to check if the file type is allowed
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+# Function to perform POS tagging and NER
+def pos_ner(text):
+    # Perform NER using Hugging Face pipeline
+    ner_results = ner_pipeline(text)
+
+    # Format NER results to show entity and its type
+    ner_result_formatted = []
+    for result in ner_results:
+        word = result['word']
+        entity_type = result.get('entity_group', 'N/A')
+
+        # Mapping entity groups to more user-friendly names
+        if entity_type == "ORG":
+            entity_type = "Organization (ORG)"
+        elif entity_type == "PERSON":
+            entity_type = "Person (PERSON)"
+        elif entity_type == "LOC":
+            entity_type = "Location (LOC)"
+        elif entity_type == "DATE":
+            entity_type = "Date (DATE)"
+        # Add more as necessary
+
+        ner_result_formatted.append((word, entity_type))
+
+    # Perform POS tagging using NLTK
+    tokens = word_tokenize(text)
+    pos_results = pos_tag(tokens)
+
+    return pos_results, ner_result_formatted
+
+# Route to handle the home page and form submission
+@app.route("/", methods=["GET", "POST"])
+def index():
+    pos_tags = None
+    ner_result = None
+    sentence = None
+    error_message = None
+
+    if request.method == "POST":
+        document_type = request.form.get("document_type")  # Choose document type
+
+        # Check for file upload
+        if 'file' not in request.files:
+            error_message = "No file part"
+            return render_template("index.html", error_message=error_message)
+
+        file = request.files['file']
+
+        if file.filename == '':
+            error_message = "No selected file"
+            return render_template("index.html", error_message=error_message)
+
+        if file and allowed_file(file.filename):
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(filepath)
+
+            # Read the content of the uploaded file
+            with open(filepath, 'r', encoding='utf-8') as f:
+                sentence = f.read()
+
+            # Get POS tags and NER results
+            pos_tags, ner_result = pos_ner(sentence)
+
+            # Optionally handle different document types (articles, medical, legal, etc.)
+            # if document_type == "article":
+            #     # Specific processing for articles
+            # elif document_type == "medical_record":
+            #     # Specific processing for medical records
+            # elif document_type == "legal_document":
+            #     # Specific processing for legal documents
+
+        else:
+            error_message = "File type not allowed"
+            return render_template("index.html", error_message=error_message)
+
+    return render_template("index.html", sentence=sentence, pos_tags=pos_tags, ner_result=ner_result)
+
+# Run the Flask app
+if __name__ == "__main__":
+    # Make sure the uploads folder exists
+    if not os.path.exists(UPLOAD_FOLDER):
+        os.makedirs(UPLOAD_FOLDER)
+    app.run(debug=True)
